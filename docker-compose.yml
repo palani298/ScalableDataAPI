@@ -1,0 +1,119 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: blogs-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: blogs
+      MYSQL_USER: bloguser
+      MYSQL_PASSWORD: blogpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command: ["mysqld", "--default-authentication-plugin=mysql_native_password", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+
+  redis:
+    image: redis:7
+    container_name: blogs-redis
+    command: ["redis-server", "--save", "", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blogs-api
+    command: ["/bin/bash", "/app/entrypoints/api.sh"]
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: docker
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DB: blogs
+      MYSQL_USER: bloguser
+      MYSQL_PASSWORD: blogpass
+      REDIS_URL: redis://redis:6379/0
+      DATASERVICE_HOST: dataservice
+      DATASERVICE_PORT: "50051"
+      BATCH_MAX_COUNT: "1000"
+      BATCH_MAX_AGE_MS: "300"
+      BATCH_MAX_BYTES: "2097152"
+      PYTHONPATH: /app/app:/app/app/dataservice/gen
+    depends_on:
+      - mysql
+      - redis
+      - dataservice
+    volumes:
+      - ./:/app
+
+  frontend:
+    image: nginx:alpine
+    container_name: blogs-frontend
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  dataservice:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blogs-dataservice
+    command: ["/bin/bash", "/app/entrypoints/dataservice.sh"]
+    ports:
+      - "50051:50051"
+    environment:
+      APP_ENV: docker
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DB: blogs
+      MYSQL_USER: bloguser
+      MYSQL_PASSWORD: blogpass
+      REDIS_URL: redis://redis:6379/0
+      GRPC_PORT: "50051"
+      STREAM_MAXLEN: "200000"
+      PYTHONPATH: /app/app:/app/app/dataservice/gen
+    depends_on:
+      - redis
+      - mysql
+    volumes:
+      - ./:/app
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blogs-worker
+    command: ["/bin/bash", "/app/entrypoints/worker.sh"]
+    environment:
+      APP_ENV: docker
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DB: blogs
+      MYSQL_USER: bloguser
+      MYSQL_PASSWORD: blogpass
+      REDIS_URL: redis://redis:6379/0
+      CONSUMER_GROUP: blog_group
+      CONSUMER_NAME: worker-1
+      BATCH_MAX_COUNT: "1000"
+      BATCH_MAX_AGE_MS: "300"
+      BATCH_MAX_BYTES: "2097152"
+      STREAM_MAXLEN: "200000"
+    depends_on:
+      - mysql
+      - redis
+    volumes:
+      - ./:/app
+
+volumes:
+  mysql-data:
+  redis-data: 

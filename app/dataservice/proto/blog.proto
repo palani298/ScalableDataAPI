@@ -1,0 +1,72 @@
+syntax = "proto3";
+package blogs;
+
+message Blog {
+  int64 id = 1;
+  string client_msg_id = 2;
+  string author = 3;
+  string created_at_iso = 4;
+  string updated_at_iso = 5;
+  string genre = 6;
+  string location = 7;
+  string content = 8;
+}
+
+message BlogCreateRequest {
+  string client_msg_id = 1; // optional, if empty server will assign
+  string author = 2;
+  string content = 3;
+  string genre = 4;
+  string location = 5;
+  string created_at_iso = 6; // optional ISO8601; server may override with now
+}
+
+message BlogEnqueueResponse {
+  bool enqueued = 1;
+  string stream = 2;
+  string message_id = 3;
+}
+
+message GetBlogRequest { int64 id = 1; }
+message GetBlogResponse { Blog blog = 1; }
+
+message ListBlogsRequest {
+  string author = 1; // empty means unset
+  string genre = 2;  // empty means unset
+  string location = 3; // empty means unset
+  int32 limit = 4;
+  int32 offset = 5;
+}
+message ListBlogsResponse { repeated Blog blogs = 1; }
+
+message UpdateBlogRequest {
+  int64 id = 1;
+  string content = 2;
+  string updated_at_iso = 3; // optional; server may override with now
+}
+message UpdateBlogResponse { bool updated = 1; }
+
+message DeleteBlogRequest { int64 id = 1; }
+message DeleteBlogResponse { bool deleted = 1; }
+
+// Bulk operations
+message BulkDeleteRequest { repeated int64 ids = 1; }
+message BulkDeleteResponse { int64 deleted = 1; }
+
+message BulkUpdateRequest {
+  repeated int64 ids = 1;
+  string genre = 2;    // empty = unset
+  string location = 3; // empty = unset
+  string content = 4;  // empty = unset
+}
+message BulkUpdateResponse { int64 updated = 1; }
+
+service DataService {
+  rpc EnqueueBlog (BlogCreateRequest) returns (BlogEnqueueResponse) {}
+  rpc GetBlog (GetBlogRequest) returns (GetBlogResponse) {}
+  rpc ListBlogs (ListBlogsRequest) returns (ListBlogsResponse) {}
+  rpc UpdateBlog (UpdateBlogRequest) returns (UpdateBlogResponse) {}
+  rpc DeleteBlog (DeleteBlogRequest) returns (DeleteBlogResponse) {}
+  rpc BulkDelete (BulkDeleteRequest) returns (BulkDeleteResponse) {}
+  rpc BulkUpdate (BulkUpdateRequest) returns (BulkUpdateResponse) {}
+} 

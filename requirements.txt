@@ -1,0 +1,12 @@
+fastapi==0.112.0
+uvicorn[standard]==0.30.6
+pydantic==2.8.2
+pydantic-settings==2.4.0
+SQLAlchemy==2.0.32
+asyncmy==0.2.9
+redis==5.0.7
+grpcio==1.65.4
+grpcio-tools==1.65.4
+protobuf==5.27.2
+python-dotenv==1.0.1
+orjson==3.10.7 

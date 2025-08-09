@@ -1,0 +1,208 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Blogs Frontend</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }
+    form, .list, .toolbar { max-width: 1100px; }
+    input, textarea, select { width: 100%; padding: 8px; margin: 4px 0 12px; }
+    button { padding: 8px 14px; }
+    .row { border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; border-radius: 6px; display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+    .row h4 { margin: 0 0 4px 0; }
+    .flex { display: flex; gap: 10px; align-items: center; }
+    .flex > * { flex: 1; }
+    .small { color: #666; font-size: 12px; }
+    .toolbar { display: flex; gap: 10px; align-items: center; margin: 10px 0; }
+    .pill { padding: 4px 8px; border: 1px solid #ddd; border-radius: 20px; }
+    .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <h1>Blogs Frontend</h1>
+  <p class="small">API base defaults to http://localhost:8000. Change below if needed.</p>
+  <div class="flex">
+    <input id="apiBase" value="http://localhost:8000" />
+    <button onclick="loadBlogs(true)">Refresh</button>
+    <label class="pill"><input type="checkbox" id="autoRefresh" /> Auto-refresh (2s)</label>
+  </div>
+
+  <h2>Create</h2>
+  <form onsubmit="return createBlog(event)">
+    <div class="flex">
+      <input id="author" placeholder="Author" required />
+      <input id="genre" placeholder="Genre" required />
+      <input id="location" placeholder="Location" required />
+    </div>
+    <textarea id="content" placeholder="Content" rows="4" required></textarea>
+    <button type="submit">Enqueue</button>
+  </form>
+
+  <h2>List</h2>
+  <div class="toolbar">
+    <input id="f_author" placeholder="Author filter" />
+    <input id="f_genre" placeholder="Genre filter" />
+    <input id="f_location" placeholder="Location filter" />
+    <button onclick="loadBlogs(true)">Apply</button>
+    <span class="pill">Page: <span id="pageNum">1</span></span>
+    <button onclick="prevPage()">Prev</button>
+    <button onclick="nextPage()">Next</button>
+    <span class="pill">Page size: <span id="pageSize">20</span></span>
+    <label class="pill"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)" /> Select all (page)</label>
+  </div>
+
+  <div class="actions">
+    <button onclick="bulkDelete()">Bulk Delete</button>
+    <span>Bulk Update:</span>
+    <input id="b_genre" placeholder="Genre (optional)" style="max-width:200px" />
+    <input id="b_location" placeholder="Location (optional)" style="max-width:220px" />
+    <input id="b_content" placeholder="Content (optional)" style="flex:2" />
+    <button onclick="bulkUpdate()">Apply to selected</button>
+  </div>
+
+  <div id="list" class="list"></div>
+
+  <script>
+    let page = 1;
+    const pageSize = 20;
+    const selected = new Set();
+    let autoRefreshTimer = null;
+
+    function api(path) { return document.getElementById('apiBase').value + path }
+
+    function startAuto() {
+      const el = document.getElementById('autoRefresh');
+      if (el.checked) {
+        if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+        autoRefreshTimer = setInterval(() => loadBlogs(false), 2000);
+      } else if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+    }
+    document.getElementById('autoRefresh').addEventListener('change', startAuto);
+
+    function toggleSelectAll(checkbox) {
+      document.querySelectorAll('.row input[type="checkbox"].sel').forEach(cb => {
+        cb.checked = checkbox.checked;
+        const id = parseInt(cb.dataset.id);
+        if (checkbox.checked) selected.add(id); else selected.delete(id);
+      });
+      renderSelectionCount();
+    }
+
+    function renderSelectionCount() {
+      // Could add a small indicator, for now we just console
+      console.log('Selected ids:', Array.from(selected));
+    }
+
+    function prevPage() {
+      if (page > 1) { page--; loadBlogs(true); }
+    }
+    function nextPage() {
+      page++; loadBlogs(true);
+    }
+
+    async function createBlog(e) {
+      e.preventDefault();
+      const payload = {
+        author: document.getElementById('author').value,
+        content: document.getElementById('content').value,
+        genre: document.getElementById('genre').value,
+        location: document.getElementById('location').value,
+      };
+      const res = await fetch(api('/blogs'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      if (!res.ok) { alert('Create failed'); return }
+      document.getElementById('content').value = '';
+      setTimeout(() => loadBlogs(true), 1200);
+    }
+
+    async function loadBlogs(resetPage) {
+      if (resetPage) page = 1;
+      document.getElementById('pageNum').innerText = page;
+      document.getElementById('pageSize').innerText = pageSize;
+      const params = new URLSearchParams();
+      const a = document.getElementById('f_author').value; if (a) params.set('author', a);
+      const g = document.getElementById('f_genre').value; if (g) params.set('genre', g);
+      const l = document.getElementById('f_location').value; if (l) params.set('location', l);
+      params.set('limit', String(pageSize));
+      params.set('offset', String((page-1)*pageSize));
+      const res = await fetch(api('/blogs') + '?' + params.toString());
+      if (!res.ok) { console.error('List failed'); return; }
+      const data = await res.json();
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      document.getElementById('selectAll').checked = false;
+      data.forEach(b => list.appendChild(renderRow(b)));
+    }
+
+    function renderRow(b) {
+      const div = document.createElement('div');
+      div.className = 'row';
+      const checked = selected.has(b.id) ? 'checked' : '';
+      div.innerHTML = `
+        <div><input type="checkbox" class="sel" data-id="${b.id}" ${checked} /></div>
+        <div>
+          <h4>#${b.id} — ${b.author} (${b.genre} @ ${b.location})</h4>
+          <div class="small">created: ${b.created_at_iso} | updated: ${b.updated_at_iso}</div>
+          <textarea rows="3" id="content_${b.id}">${b.content}</textarea>
+          <div class="flex">
+            <button onclick="updateBlog(${b.id})">Update</button>
+            <button onclick="deleteBlog(${b.id})">Delete</button>
+          </div>
+        </div>
+      `;
+      const cb = div.querySelector('input.sel');
+      cb.addEventListener('change', (e) => {
+        const id = parseInt(cb.dataset.id);
+        if (cb.checked) selected.add(id); else selected.delete(id);
+        renderSelectionCount();
+      });
+      return div;
+    }
+
+    async function updateBlog(id) {
+      const content = document.getElementById('content_' + id).value;
+      const res = await fetch(api('/blogs/' + id), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })});
+      if (!res.ok) { alert('Update failed'); return }
+      setTimeout(() => loadBlogs(false), 400);
+    }
+
+    async function deleteBlog(id) {
+      const res = await fetch(api('/blogs/' + id), { method: 'DELETE' });
+      if (!res.ok) { alert('Delete failed'); return }
+      loadBlogs(false);
+    }
+
+    async function bulkDelete() {
+      const ids = Array.from(selected);
+      if (ids.length === 0) { alert('No rows selected'); return; }
+      if (!confirm(`Delete ${ids.length} item(s)?`)) return;
+      const res = await fetch(api('/blogs/bulk-delete'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+      if (!res.ok) { alert('Bulk delete failed'); return; }
+      // remove from selection and reload
+      ids.forEach(id => selected.delete(id));
+      loadBlogs(false);
+    }
+
+    async function bulkUpdate() {
+      const ids = Array.from(selected);
+      if (ids.length === 0) { alert('No rows selected'); return; }
+      const set = {
+        genre: document.getElementById('b_genre').value || undefined,
+        location: document.getElementById('b_location').value || undefined,
+        content: document.getElementById('b_content').value || undefined,
+      };
+      if (!set.genre && !set.location && !set.content) { alert('Nothing to update'); return; }
+      const res = await fetch(api('/blogs/bulk-update'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, set }) });
+      if (!res.ok) { alert('Bulk update failed'); return; }
+      loadBlogs(false);
+    }
+
+    loadBlogs(true);
+  </script>
+</body>
+</html> 
