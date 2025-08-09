@@ -29,13 +29,13 @@ FastAPI + gRPC DataService + Redis Streams + MySQL with async batching per-genre
 
 ```mermaid
 graph TD;
-  Client["Browser / Scripts"] -->|HTTP/JSON| FastAPI["FastAPI Gateway (REST)"]
-  FastAPI -->|gRPC| DataService["DataService (gRPC)"]
-  DataService -->|XADD per-genre| Redis["Redis Streams"]
-  DataService -->|CRUD R/W via SPs| MySQL[(MySQL 8 - InnoDB)]
-  Worker["Async Worker(s)"] -->|XREADGROUP| Redis
-  Worker -->|CALL sp_bulk_insert_blogs(JSON)| MySQL
-  Nginx["Frontend (Nginx)"] -->|Static /frontend| Client
+  Client["Browser / Scripts"] -->|"HTTP/JSON"| FastAPI["FastAPI Gateway (REST)"]
+  FastAPI -->|"gRPC"| DataService["DataService (gRPC)"]
+  DataService -->|"XADD per-genre"| Redis["Redis Streams"]
+  DataService -->|"CRUD R/W via SPs"| MySQL[("MySQL 8 - InnoDB")]
+  Worker["Async Worker(s)"] -->|"XREADGROUP"| Redis
+  Worker -->|"CALL sp_bulk_insert_blogs(JSON)"| MySQL
+  Nginx["Frontend (Nginx)"] -->|"Static /frontend"| Client
 ```
 
 ## Stored procedures required
@@ -66,65 +66,6 @@ Tune knobs
 - DB: add replicas for reads; partitions on `created_at` as data grows
 - Redis: more consumer instances by genre to scale write throughput
 
-
-### MySQL 8 seed script (100 authors × 10 genres × 10 locations = 10,000 rows)
-Run in DataGrip against schema `blogs`. Uncomment TRUNCATE if you want a clean slate.
-
-```sql
--- Optional: wipe existing data
--- TRUNCATE TABLE blogs;
-
-USE blogs;
-
--- Use current timestamp with microseconds
-SET @now := NOW(6);
-
-WITH RECURSIVE
-a(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM a WHERE n < 100),
-g(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM g WHERE n < 10),
-l(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM l WHERE n < 10),
-authors AS (
-  SELECT CONCAT('author_', LPAD(n, 3, '0')) AS author
-  FROM a
-),
-genres AS (
-  SELECT CONCAT('genre_', LPAD(n, 2, '0')) AS genre
-  FROM g
-),
-locations AS (
-  SELECT CONCAT('location_', LPAD(n, 2, '0')) AS location
-  FROM l
-)
-INSERT INTO blogs (
-  client_msg_id, author, created_at, updated_at, genre, location, content
-)
-SELECT
-  UUID() AS client_msg_id,
-  a.author,
-  /* created_at: random time within last 30 days */
-  TIMESTAMPADD(SECOND, -FLOOR(RAND() * 2592000), @now) AS created_at,
-  /* updated_at: later of two random times within last 30 days (>= created_at) */
-  GREATEST(
-    TIMESTAMPADD(SECOND, -FLOOR(RAND() * 2592000), @now),
-    TIMESTAMPADD(SECOND, -FLOOR(RAND() * 2592000), @now)
-  ) AS updated_at,
-  g.genre,
-  l.location,
-  CONCAT(
-    'Sample blog by ', a.author,
-    ' in ', g.genre,
-    ' at ', l.location,
-    ' — content generated for testing.'
-  ) AS content
-FROM authors a
-CROSS JOIN genres g
-CROSS JOIN locations l;
-```
-
-- This generates 10,000 rows with unique `client_msg_id`, realistic timestamps (past 30 days), and simple content.
-- Adjust counts by changing limits in the CTEs:
-  - `a WHERE n < 50` → 50 authors
-  - `g WHERE n < 5` → 5 genres
-  - `l WHERE n < 5` → 5 locations
-
-- Validated services are up; you can now query via API/Frontend as well. 
+## MySQL 8 seed script
+- File: `db/seed.sql`
+- Open in DataGrip and run it against schema `blogs` to generate 10,000 test rows (100 authors × 10 genres × 10 locations). 
