@@ -18,8 +18,11 @@ FastAPI + gRPC DataService + Redis Streams + MySQL with async batching per-genre
 - Worker buffers by key `(genre, location)`; flush on size/time/bytes.
 
 ## Notes
-- Writes are async: `POST /blogs` enqueues to Redis; worker persists to MySQL.
-- Reads go through DataService now (gRPC). FastAPI gateway calls DataService for CRUD.
+- Create (POST /blogs): enqueues to Redis only; worker batches to MySQL via `sp_bulk_insert_blogs` on thresholds (≈300 ms age, 1000 rows, or ~2 MB). Acks only after DB commit. Idempotency via unique `client_msg_id`.
+- Create sync (POST /blogs?sync=true): writes directly to DB via `sp_create_blog` and also appends to Redis.
+- Update/Delete (PUT/DELETE /blogs/{id}): direct DB writes via `sp_update_blog_content` / `sp_delete_blog` (synchronous).
+- Bulk update/delete: direct DB writes via `sp_bulk_update_blogs` / `sp_bulk_delete_blogs` (single SQL per bulk).
+- Reads go through DataService (gRPC). FastAPI gateway calls DataService for CRUD.
 
 ## Frontend (separate)
 - A static test frontend is served by Nginx at http://localhost:8080

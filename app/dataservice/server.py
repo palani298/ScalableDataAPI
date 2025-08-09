@@ -87,6 +87,47 @@ class DataService(blog_pb2_grpc.DataServiceServicer):
         logger.info("Enqueued blog to %s id %s", stream, message_id)
         return blog_pb2.BlogEnqueueResponse(enqueued=True, stream=stream, message_id=message_id)
 
+    async def CreateBlogSync(self, request: blog_pb2.BlogCreateSyncRequest, context: grpc.aio.ServicerContext) -> blog_pb2.BlogCreateSyncResponse:  # type: ignore
+        client_msg_id = request.client_msg_id or str(uuid.uuid4())
+        genre = (request.genre or "").strip()
+        location = (request.location or "").strip()
+        author = (request.author or "").strip()
+        content = request.content or ""
+        created_at = _iso_to_dt(request.created_at_iso)
+        if not genre or not location or not author or not content:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "author, content, genre, location are required")
+        engine = get_engine()
+        new_id: int = 0
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                text("CALL sp_create_blog(:client_msg_id, :author, :content, :genre, :location, :created_at)"),
+                {
+                    "client_msg_id": client_msg_id,
+                    "author": author,
+                    "content": content,
+                    "genre": genre,
+                    "location": location,
+                    "created_at": created_at,
+                },
+            )
+            row = result.mappings().first()
+            new_id = int(row["id"]) if row and "id" in row else 0
+            if new_id <= 0:
+                await context.abort(grpc.StatusCode.INTERNAL, "Failed to create blog")
+        # Append to Redis stream after DB create (for caches/feed consumers)
+        stream = self._stream_for_genre(genre)
+        fields = {
+            "client_msg_id": client_msg_id,
+            "author": author,
+            "content": content,
+            "genre": genre,
+            "location": location,
+            "created_at_iso": _dt_to_iso(created_at),
+        }
+        message_id = await self.redis.xadd(stream, fields, maxlen=self.stream_maxlen, approximate=True)
+        logger.info("Sync-created blog id %s and enqueued to %s id %s", new_id, stream, message_id)
+        return blog_pb2.BlogCreateSyncResponse(created=True, id=new_id, stream=stream, message_id=message_id)
+
     async def GetBlog(self, request: blog_pb2.GetBlogRequest, context: grpc.aio.ServicerContext) -> blog_pb2.GetBlogResponse:  # type: ignore
         engine = get_engine()
         async with engine.connect() as conn:

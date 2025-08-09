@@ -21,7 +21,7 @@ from app.common.config import settings
 # gRPC stubs are generated at runtime into this package
 from app.dataservice.gen import blog_pb2, blog_pb2_grpc  # type: ignore
 
-app = FastAPI(title="Blogs API", version="0.3.0")
+app = FastAPI(title="Blogs API", version="0.4.0")
 
 # CORS for separate frontend
 app.add_middleware(
@@ -79,20 +79,31 @@ async def healthz() -> dict:
 
 
 @app.post("/blogs", response_model=dict)
-async def create_blog(req: BlogCreate) -> dict:
+async def create_blog(req: BlogCreate, sync: bool = Query(default=False)) -> dict:
     stub = await _grpc_stub()
     try:
-        resp = await stub.EnqueueBlog(blog_pb2.BlogCreateRequest(
-            client_msg_id=req.client_msg_id or "",
-            author=req.author,
-            content=req.content,
-            genre=req.genre,
-            location=req.location,
-            created_at_iso=req.created_at_iso or "",
-        ))
+        if sync:
+            resp = await stub.CreateBlogSync(blog_pb2.BlogCreateSyncRequest(
+                client_msg_id=req.client_msg_id or "",
+                author=req.author,
+                content=req.content,
+                genre=req.genre,
+                location=req.location,
+                created_at_iso=req.created_at_iso or "",
+            ))
+            return {"status": "created", "id": resp.id, "stream": resp.stream, "message_id": resp.message_id}
+        else:
+            resp = await stub.EnqueueBlog(blog_pb2.BlogCreateRequest(
+                client_msg_id=req.client_msg_id or "",
+                author=req.author,
+                content=req.content,
+                genre=req.genre,
+                location=req.location,
+                created_at_iso=req.created_at_iso or "",
+            ))
+            return {"status": "enqueued", "stream": resp.stream, "message_id": resp.message_id}
     except grpc.aio.AioRpcError as e:  # type: ignore
         raise HTTPException(status_code=400, detail=e.details())
-    return {"status": "enqueued", "stream": resp.stream, "message_id": resp.message_id}
 
 
 @app.get("/blogs/{blog_id}", response_model=BlogOut)

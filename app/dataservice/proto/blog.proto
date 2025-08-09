@@ -27,6 +27,21 @@ message BlogEnqueueResponse {
   string message_id = 3;
 }
 
+message BlogCreateSyncRequest {
+  string client_msg_id = 1; // optional
+  string author = 2;
+  string content = 3;
+  string genre = 4;
+  string location = 5;
+  string created_at_iso = 6; // optional
+}
+message BlogCreateSyncResponse {
+  bool created = 1;
+  int64 id = 2;
+  string stream = 3;
+  string message_id = 4;
+}
+
 message GetBlogRequest { int64 id = 1; }
 message GetBlogResponse { Blog blog = 1; }
 
@@ -63,6 +78,7 @@ message BulkUpdateResponse { int64 updated = 1; }
 
 service DataService {
   rpc EnqueueBlog (BlogCreateRequest) returns (BlogEnqueueResponse) {}
+  rpc CreateBlogSync (BlogCreateSyncRequest) returns (BlogCreateSyncResponse) {}
   rpc GetBlog (GetBlogRequest) returns (GetBlogResponse) {}
   rpc ListBlogs (ListBlogsRequest) returns (ListBlogsResponse) {}
   rpc UpdateBlog (UpdateBlogRequest) returns (UpdateBlogResponse) {}
